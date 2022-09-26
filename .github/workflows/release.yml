@@ -1,30 +1,41 @@
-name: Release Draft
-
+name: auto release dev_publish
 on:
   push:
-    tags: ['v0*', 'v1*', 'v2*', 'v3*', 'v4*', 'v5*', 'v6*', 'v7*', 'v8*', 'v9*']
-
+    # mainブランチにコミットがpushされたときに限定
+    branches:
+      - dev_publish
+    # 上記条件に加えてgenディレクトリ配下が変更されたときのみという条件を追加
+    paths:
+      - Pages/**
 jobs:
-  build:
-
+  auto-release:
     runs-on: ubuntu-latest
-
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_IT_VERSION: 14.2.1
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js
-      uses: actions/setup-node@v1
-      with:
-        node-version: 10.x
-    - run: npm cit && npm run lint
-      env:
-        CI: true
-    - run: npm run build
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@latest
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: ${{ github.ref }}
-        draft: true
+      - name: Check out codes
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@v1
+        with:
+          node-version: '12'
+      - name: Set releaser settings
+        run: |
+          git config --global user.name release-machine
+          git config --global user.email email@example.com
+      - name: Major release
+        id: major
+        if: contains(toJSON(github.event.commits.*.message), 'bump up version major')
+        run:  npx release-it@${RELEASE_IT_VERSION} -- major --ci
+      - name: Minor release
+        id: minor
+        # メジャーバージョンアップをしていないときマイナーバージョンアップを行なうか
+        if: steps.major.conclusion == 'skipped'  && contains(toJSON(github.event.commits.*.message), 'bump up version minor')
+        run:  npx release-it@${RELEASE_IT_VERSION} -- minor --ci
+      - name: Patch release
+        # コミットメッセージに特に指定がない場合はマイナーバージョンを更新する
+        if: "!(steps.major.conclusion == 'success' || steps.minor.conclusion == 'success')"
+        run:  npx release-it@${RELEASE_IT_VERSION} -- patch --ci
